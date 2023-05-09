@@ -44,13 +44,15 @@ impl DysonCli {
     /// Run the plan command
     async fn run_plan_command(&self) -> Result<(), Box<dyn std::error::Error>> {
         let dyson = self.try_new_cleaner().await?;
-        dyson.plan(std::io::stdout()).await
+        let _ = dyson.plan(std::io::stdout()).await?;
+        Ok(())
     }
 
     /// Run the apply command
     async fn run_apply_command(&self) -> Result<(), Box<dyn std::error::Error>> {
         let dyson = self.try_new_cleaner().await?;
-        dyson.apply(std::io::stdout()).await
+        let _ = dyson.apply(std::io::stdout()).await?;
+        Ok(())
     }
 
     /// Try to initialize a cleaner

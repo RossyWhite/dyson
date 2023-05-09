@@ -54,7 +54,7 @@ pub trait ImageDeleter {
 
 /// An error returned an ImageDeleter
 #[derive(Debug, thiserror::Error)]
-#[error("[ImageCleanerError] kind: {:?}, source: {}", self.kind, self.source)]
+#[error("[ImageDeleterError] kind: {:?}, source: {}", self.kind, self.source)]
 pub struct ImageDeleterError {
     /// The kind of the error.
     kind: ImageDeleterErrorKind,

@@ -9,7 +9,7 @@ use crate::provider::ecr::EcrImageRegistry;
 use crate::provider::ecs_service::EcsServiceImageProvider;
 use crate::provider::lambda::LambdaImageProvider;
 use crate::provider::task_definition::TaskDefinitionProvider;
-use crate::provider::{ImageProvider, ImageRegistry};
+use crate::provider::{ImageDeleterError, ImageProvider, ImageProviderError, ImageRegistry};
 
 /// dyson App
 pub struct Dyson {
@@ -43,28 +43,22 @@ impl Dyson {
     }
 
     /// Dry-run the cleaner
-    pub async fn plan(
-        &self,
-        _output: impl std::io::Write,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn plan(&self, _output: impl std::io::Write) -> Result<(), DysonError> {
         let targets = self.aggregate_images().await?;
         println!("targets: {:?}", targets);
         Ok(())
     }
 
     /// Apply the cleaner
-    pub async fn apply(
-        &self,
-        _output: impl std::io::Write,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn apply(&self, _output: impl std::io::Write) -> Result<(), DysonError> {
         let targets = self.aggregate_images().await?;
         println!("targets: {:?}", targets);
-        self.registry.delete_images(&targets).await?;
+        self.delete_images(&targets).await?;
         Ok(())
     }
 
     /// aggregate images from sources
-    async fn aggregate_images(&self) -> Result<HashSet<EcrImageId>, Box<dyn std::error::Error>> {
+    async fn aggregate_images(&self) -> Result<HashSet<EcrImageId>, DysonError> {
         let includes = self.registry.provide_images().await?;
 
         let excludes = try_join_all(self.scan_targets.iter().map(|s| s.provide_images()))
@@ -76,5 +70,48 @@ impl Dyson {
             });
 
         Ok(&includes - &excludes)
+    }
+
+    /// delete images from registry
+    async fn delete_images(&self, images: &HashSet<EcrImageId>) -> Result<(), DysonError> {
+        self.registry.delete_images(images).await?;
+        Ok(())
+    }
+}
+
+/// An error returned an ImageProvider
+#[derive(Debug, thiserror::Error)]
+#[error("[DysonError] kind: {:?}, source: {}", self.kind, self.source)]
+pub struct DysonError {
+    /// The kind of the error.
+    kind: DysonErrorKind,
+    /// The source of the error.
+    source: Box<dyn std::error::Error + Send + Sync>,
+}
+
+/// The kind of an DysonError.
+#[derive(Debug)]
+pub enum DysonErrorKind {
+    /// An error caused by aggregation.
+    AggregationError,
+    /// An error caused by deletion.
+    DeletionError,
+}
+
+impl From<ImageProviderError> for DysonError {
+    fn from(err: ImageProviderError) -> Self {
+        Self {
+            kind: DysonErrorKind::AggregationError,
+            source: Box::new(err),
+        }
+    }
+}
+
+impl From<ImageDeleterError> for DysonError {
+    fn from(err: ImageDeleterError) -> Self {
+        Self {
+            kind: DysonErrorKind::DeletionError,
+            source: Box::new(err),
+        }
     }
 }
