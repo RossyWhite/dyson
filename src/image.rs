@@ -49,6 +49,13 @@ impl EcrImageId {
     }
 }
 
+#[cfg(test)]
+impl EcrImageId {
+    pub fn default_with_tag(tag: impl Into<String>) -> Self {
+        Self::new("123456789012", "us-east-1", "nginx", tag.into())
+    }
+}
+
 /// An image in ECR
 #[derive(Debug, Clone)]
 pub struct EcrImageDetail {

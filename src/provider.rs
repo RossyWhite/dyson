@@ -13,6 +13,7 @@ pub mod task_definition;
 /// ImageProvider is a trait for providing images
 #[async_trait::async_trait]
 pub trait ImageProvider {
+    /// Provide images from the source
     async fn provide_images(&self) -> Result<HashSet<EcrImageId>, ImageProviderError>;
 }
 

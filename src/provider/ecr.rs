@@ -105,7 +105,7 @@ impl ImageProvider for EcrImageRegistry {
 
         try_join_set_to_stream(tasks)
             .try_fold(HashSet::new(), |mut acc, cur| async {
-                let ids = cur.into_iter().map(|i| i).collect::<HashSet<_>>();
+                let ids = cur.into_iter().collect::<HashSet<_>>();
                 acc.extend(ids);
                 Ok(acc)
             })
@@ -120,7 +120,7 @@ impl ImageDeleter for EcrImageRegistry {
         let per_repo = images.iter().fold(HashMap::new(), |mut acc, img| {
             let repo = img.repository_name.clone();
             let id = ImageIdentifier::builder().image_tag(&img.image_tag).build();
-            acc.entry(repo).or_insert_with(|| Vec::new()).push(id);
+            acc.entry(repo).or_insert_with(Vec::new).push(id);
             acc
         });
 
@@ -180,6 +180,6 @@ impl ImageFilter {
             }
         }
 
-        return true;
+        true
     }
 }
