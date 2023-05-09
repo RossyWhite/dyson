@@ -1,9 +1,6 @@
 use std::collections::HashSet;
 
-use std::sync::Arc;
-
 use futures::TryStreamExt;
-
 use tokio::task::JoinSet;
 use tokio_stream::StreamExt;
 
@@ -12,12 +9,13 @@ use crate::utils::try_join_set_to_stream;
 
 /// An ECR image provider from ECS services
 struct EcsServiceImageProvider {
-    client: Arc<aws_sdk_ecs::Client>,
+    /// The AWS SDK client for ECS
+    client: aws_sdk_ecs::Client,
 }
 
 #[async_trait::async_trait]
 impl ImageProvider for EcsServiceImageProvider {
-    async fn list_images(&self) -> Result<HashSet<EcrImageId>, ImageProviderError> {
+    async fn provide_images(&self) -> Result<HashSet<EcrImageId>, ImageProviderError> {
         let clusters: Vec<String> = self
             .client
             .list_clusters()
@@ -90,21 +88,5 @@ impl ImageProvider for EcsServiceImageProvider {
             })
             .await
             .map_err(ImageProviderError::from)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn d() {
-        let config = aws_config::load_from_env().await;
-        let client = aws_sdk_ecs::Client::new(&config);
-        let source = EcsServiceImageProvider {
-            client: Arc::new(client),
-        };
-        let images = source.list_images().await.unwrap();
-        println!("images: {:?}", images)
     }
 }

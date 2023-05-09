@@ -1,23 +1,23 @@
-use futures::TryStreamExt;
 use std::collections::HashSet;
 use std::sync::Arc;
 
 use aws_sdk_lambda::types::{FunctionConfiguration, PackageType};
-
+use futures::TryStreamExt;
 use tokio::task::JoinSet;
 use tokio_stream::StreamExt;
 
 use crate::provider::{EcrImageId, ImageProvider, ImageProviderError};
 use crate::utils::try_join_set_to_stream;
 
-/// An ECR image source from lambda functions
+/// An ECR image provider from lambda functions
 struct LambdaImageProvider {
+    /// The AWS SDK client for Lambda
     client: Arc<aws_sdk_lambda::Client>,
 }
 
 #[async_trait::async_trait]
 impl ImageProvider for LambdaImageProvider {
-    async fn list_images(&self) -> Result<HashSet<EcrImageId>, ImageProviderError> {
+    async fn provide_images(&self) -> Result<HashSet<EcrImageId>, ImageProviderError> {
         let functions: Vec<FunctionConfiguration> = self
             .client
             .list_functions()
@@ -55,21 +55,5 @@ impl ImageProvider for LambdaImageProvider {
                 Ok(acc)
             })
             .await
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn a() {
-        let config = aws_config::load_from_env().await;
-        let client = aws_sdk_lambda::Client::new(&config);
-        let source = LambdaImageProvider {
-            client: Arc::new(client),
-        };
-        let images = source.list_images().await.unwrap();
-        println!("images: {:?}", images);
     }
 }

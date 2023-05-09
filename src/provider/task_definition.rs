@@ -1,13 +1,9 @@
 use std::collections::HashSet;
-
 use std::sync::Arc;
 
 use aws_sdk_ecs::types::{SortOrder, TaskDefinitionFamilyStatus, TaskDefinitionStatus};
-
 use futures::TryStreamExt;
-
 use tokio::task::JoinSet;
-
 use tokio_stream::StreamExt;
 
 use crate::provider::{EcrImageId, ImageProvider, ImageProviderError};
@@ -15,13 +11,15 @@ use crate::utils::try_join_set_to_stream;
 
 /// An ECR image source from Task Definitions
 struct TaskDefinitionSource {
+    /// The AWS SDK client for ECS
     client: Arc<aws_sdk_ecs::Client>,
+    /// The maximum number of results to return in a single family.
     max_result: i32,
 }
 
 #[async_trait::async_trait]
 impl ImageProvider for TaskDefinitionSource {
-    async fn list_images(&self) -> Result<HashSet<EcrImageId>, ImageProviderError> {
+    async fn provide_images(&self) -> Result<HashSet<EcrImageId>, ImageProviderError> {
         let families: Vec<String> = self
             .client
             .list_task_definition_families()
@@ -82,76 +80,5 @@ impl ImageProvider for TaskDefinitionSource {
             })
             .await
             .map_err(ImageProviderError::from)
-    }
-}
-//
-// #[derive(Debug)]
-// pub struct TaskDefinitionSourceError {
-//     kind: TaskDefinitionSourceErrorKind,
-//     source: Box<dyn Error + Send + Sync>,
-// }
-//
-// #[derive(Debug)]
-// pub enum TaskDefinitionSourceErrorKind {
-//     /// An error caused by AWS SDK.
-//     SdkError,
-//     /// An error caused by other reasons.
-//     Other,
-// }
-//
-// impl Display for TaskDefinitionSourceError {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-//         write!(f, "kind: {:?}, source: {}", self.kind, self.source)
-//     }
-// }
-//
-// impl Error for TaskDefinitionSourceError {
-//     fn source(&self) -> Option<&(dyn Error + 'static)> {
-//         Some(self.source.as_ref())
-//     }
-// }
-//
-// impl TaskDefinitionSourceError {
-//     pub fn sdk_error<E>(e: SdkError<E>) -> Self
-//     where
-//         E: Error + Send + Sync + 'static,
-//     {
-//         Self {
-//             kind: TaskDefinitionSourceErrorKind::SdkError,
-//             source: Box::new(e),
-//         }
-//     }
-//
-//     pub fn other<E>(e: E) -> Self
-//     where
-//         E: Error + Send + Sync + 'static,
-//     {
-//         Self {
-//             kind: TaskDefinitionSourceErrorKind::Other,
-//             source: Box::new(e),
-//         }
-//     }
-// }
-//
-// impl From<TaskDefinitionSourceError> for ImageProviderError {
-//     fn from(err: TaskDefinitionSourceError) -> ImageProviderError {
-//         ImageProviderError::new(err)
-//     }
-// }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn c() {
-        let config = aws_config::load_from_env().await;
-        let client = aws_sdk_ecs::Client::new(&config);
-        let source = TaskDefinitionSource {
-            client: Arc::new(client),
-            max_result: 2,
-        };
-        let images = source.list_images().await.unwrap();
-        println!("images: {:?}", images)
     }
 }

@@ -11,17 +11,20 @@ use tokio_stream::StreamExt;
 
 use crate::config::{RegistryConfig, RepositoryTargetsConfig};
 use crate::image::{EcrImageDetail, EcrImageId};
-use crate::provider::{ImageCleaner, ImageCleanerError, ImageRegistry};
+use crate::provider::{ImageDeleter, ImageDeleterError, ImageRegistry};
 use crate::provider::{ImageProvider, ImageProviderError};
 use crate::utils::try_join_set_to_stream;
 
-pub struct EcrImageProvider {
+/// An ECR image Registry
+pub struct EcrImageRegistry {
+    /// The AWS SDK client for ECR
     client: aws_sdk_ecr::Client,
+    /// The filters for images
     filters: Arc<Vec<ImageFilter>>,
 }
 
-impl EcrImageProvider {
-    pub async fn from_conf(conf: &RegistryConfig) -> EcrImageProvider {
+impl EcrImageRegistry {
+    pub async fn from_conf(conf: &RegistryConfig) -> EcrImageRegistry {
         let client = aws_sdk_ecr::Client::new(
             &aws_config::from_env()
                 .profile_name(&conf.profile_name)
@@ -41,8 +44,8 @@ impl EcrImageProvider {
 }
 
 #[async_trait::async_trait]
-impl ImageProvider for EcrImageProvider {
-    async fn list_images(&self) -> Result<HashSet<EcrImageId>, ImageProviderError> {
+impl ImageProvider for EcrImageRegistry {
+    async fn provide_images(&self) -> Result<HashSet<EcrImageId>, ImageProviderError> {
         let repos: Vec<Repository> = self
             .client
             .describe_repositories()
@@ -112,8 +115,8 @@ impl ImageProvider for EcrImageProvider {
 }
 
 #[async_trait::async_trait]
-impl ImageCleaner for EcrImageProvider {
-    async fn delete_images(&self, images: &HashSet<EcrImageId>) -> Result<(), ImageCleanerError> {
+impl ImageDeleter for EcrImageRegistry {
+    async fn delete_images(&self, images: &HashSet<EcrImageId>) -> Result<(), ImageDeleterError> {
         let per_repo = images.iter().fold(HashMap::new(), |mut acc, img| {
             let repo = img.repository_name.clone();
             let id = ImageIdentifier::builder().image_tag(&img.image_tag).build();
@@ -134,7 +137,7 @@ impl ImageCleaner for EcrImageProvider {
     }
 }
 
-impl ImageRegistry for EcrImageProvider {}
+impl ImageRegistry for EcrImageRegistry {}
 
 struct ImageFilter {
     pattern: glob::Pattern,
@@ -179,19 +182,4 @@ impl ImageFilter {
 
         return true;
     }
-}
-
-#[cfg(test)]
-mod tests {
-
-    // #[tokio::test]
-    // async fn b() {
-    //     let config = aws_config::load_from_env().await;
-    //     let client = aws_sdk_ecr::Client::new(&config);
-    //     let registry = EcrImageProvider {
-    //         client: Arc::new(client),
-    //     };
-    //     let images = registry.list_images().await.unwrap();
-    //     println!("images: {:?}", images);
-    // }
 }

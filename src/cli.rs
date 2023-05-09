@@ -3,6 +3,7 @@ use std::path::Path;
 use crate::config::DysonConfig;
 use crate::dyson::Dyson;
 
+/// Dyson CLI
 #[derive(clap::Parser)]
 #[command(version)]
 pub struct DysonCli {

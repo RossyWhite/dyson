@@ -5,7 +5,7 @@ use futures::future::try_join_all;
 
 use crate::config::DysonConfig;
 use crate::image::EcrImageId;
-use crate::provider::ecr::EcrImageProvider;
+use crate::provider::ecr::EcrImageRegistry;
 use crate::provider::{ImageProvider, ImageRegistry};
 
 /// dyson App
@@ -19,7 +19,7 @@ pub struct Dyson {
 impl Dyson {
     /// Create a new dyson cleaner
     pub async fn new(conf: &DysonConfig) -> Self {
-        let registry = Arc::new(EcrImageProvider::from_conf(&conf.registry).await);
+        let registry = Arc::new(EcrImageRegistry::from_conf(&conf.registry).await);
         let scan_targets: Vec<_> = conf.scans.iter().map(|_s| todo!()).collect::<Vec<_>>();
 
         Self {
@@ -51,9 +51,9 @@ impl Dyson {
 
     /// aggregate images from sources
     async fn aggregate_images(&self) -> Result<HashSet<EcrImageId>, Box<dyn std::error::Error>> {
-        let includes = self.registry.list_images().await?;
+        let includes = self.registry.provide_images().await?;
 
-        let excludes = try_join_all(self.scan_targets.iter().map(|s| s.list_images()))
+        let excludes = try_join_all(self.scan_targets.iter().map(|s| s.provide_images()))
             .await?
             .into_iter()
             .fold(HashSet::new(), |mut a, i| {

@@ -3,7 +3,6 @@ use clap::Parser;
 mod cli;
 mod config;
 mod dyson;
-mod filter;
 mod image;
 mod provider;
 mod utils;
