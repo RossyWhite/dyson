@@ -30,8 +30,22 @@ pub struct ImageProviderError {
 /// The kind of an ImageProviderError.
 #[derive(Debug)]
 pub enum ImageProviderErrorKind {
+    /// An error caused by initialization.
+    InitializationError,
     /// An error caused by AWS SDK.
     SdkError,
+}
+
+impl ImageProviderError {
+    pub fn initialization_error<T>(err: T) -> Self
+    where
+        T: std::error::Error + Send + Sync + 'static,
+    {
+        Self {
+            kind: ImageProviderErrorKind::InitializationError,
+            source: Box::new(err),
+        }
+    }
 }
 
 impl<T> From<SdkError<T>> for ImageProviderError

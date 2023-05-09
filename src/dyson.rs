@@ -9,7 +9,7 @@ use crate::provider::ecr::EcrImageRegistry;
 use crate::provider::ecs_service::EcsServiceImageProvider;
 use crate::provider::lambda::LambdaImageProvider;
 use crate::provider::task_definition::TaskDefinitionProvider;
-use crate::provider::{ImageDeleterError, ImageProvider, ImageProviderError, ImageRegistry};
+use crate::provider::{ImageProvider, ImageRegistry};
 
 /// dyson App
 pub struct Dyson {
@@ -21,8 +21,12 @@ pub struct Dyson {
 
 impl Dyson {
     /// Create a new dyson cleaner
-    pub async fn new(conf: &DysonConfig) -> Self {
-        let registry = Arc::new(EcrImageRegistry::from_conf(&conf.registry).await);
+    pub async fn new(conf: &DysonConfig) -> Result<Self, DysonError> {
+        let registry = Arc::new(
+            EcrImageRegistry::from_conf(&conf.registry)
+                .await
+                .map_err(DysonError::initialization_error)?,
+        );
 
         let mut scan_targets = Vec::<Arc<dyn ImageProvider>>::new();
 
@@ -36,10 +40,10 @@ impl Dyson {
             scan_targets.push(Arc::new(TaskDefinitionProvider::from_conf(c)));
         }
 
-        Self {
+        Ok(Self {
             registry,
             scan_targets,
-        }
+        })
     }
 
     /// Dry-run the cleaner
@@ -59,10 +63,15 @@ impl Dyson {
 
     /// aggregate images from sources
     async fn aggregate_images(&self) -> Result<HashSet<EcrImageId>, DysonError> {
-        let includes = self.registry.provide_images().await?;
+        let includes = self
+            .registry
+            .provide_images()
+            .await
+            .map_err(DysonError::aggregation_error)?;
 
         let excludes = try_join_all(self.scan_targets.iter().map(|s| s.provide_images()))
-            .await?
+            .await
+            .map_err(DysonError::aggregation_error)?
             .into_iter()
             .fold(HashSet::new(), |mut a, i| {
                 a.extend(i);
@@ -74,7 +83,10 @@ impl Dyson {
 
     /// delete images from registry
     async fn delete_images(&self, images: &HashSet<EcrImageId>) -> Result<(), DysonError> {
-        self.registry.delete_images(images).await?;
+        self.registry
+            .delete_images(images)
+            .await
+            .map_err(DysonError::deletion_error)?;
         Ok(())
     }
 }
@@ -92,23 +104,39 @@ pub struct DysonError {
 /// The kind of an DysonError.
 #[derive(Debug)]
 pub enum DysonErrorKind {
+    /// An error caused by initialization.
+    InitializationError,
     /// An error caused by aggregation.
     AggregationError,
     /// An error caused by deletion.
     DeletionError,
 }
 
-impl From<ImageProviderError> for DysonError {
-    fn from(err: ImageProviderError) -> Self {
+impl DysonError {
+    pub fn initialization_error<E>(err: E) -> Self
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        Self {
+            kind: DysonErrorKind::InitializationError,
+            source: Box::new(err),
+        }
+    }
+
+    pub fn aggregation_error<E>(err: E) -> Self
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
         Self {
             kind: DysonErrorKind::AggregationError,
             source: Box::new(err),
         }
     }
-}
 
-impl From<ImageDeleterError> for DysonError {
-    fn from(err: ImageDeleterError) -> Self {
+    pub fn deletion_error<E>(err: E) -> Self
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
         Self {
             kind: DysonErrorKind::DeletionError,
             source: Box::new(err),
@@ -118,8 +146,7 @@ impl From<ImageDeleterError> for DysonError {
 
 #[cfg(test)]
 mod tests {
-    
-    use crate::provider::ImageDeleter;
+    use crate::provider::{ImageDeleter, ImageDeleterError, ImageProviderError};
 
     use super::*;
 

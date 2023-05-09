@@ -24,7 +24,7 @@ pub struct EcrImageRegistry {
 }
 
 impl EcrImageRegistry {
-    pub async fn from_conf(conf: &RegistryConfig) -> EcrImageRegistry {
+    pub async fn from_conf(conf: &RegistryConfig) -> Result<EcrImageRegistry, ImageProviderError> {
         let client = aws_sdk_ecr::Client::new(
             &aws_config::from_env()
                 .profile_name(&conf.profile_name)
@@ -35,11 +35,11 @@ impl EcrImageRegistry {
         let filters = Arc::new(
             conf.targets
                 .iter()
-                .map(ImageFilter::new)
-                .collect::<Vec<_>>(),
+                .map(ImageFilter::try_new)
+                .collect::<Result<Vec<_>, _>>()?,
         );
 
-        Self { client, filters }
+        Ok(Self { client, filters })
     }
 }
 
@@ -139,23 +139,30 @@ impl ImageDeleter for EcrImageRegistry {
 
 impl ImageRegistry for EcrImageRegistry {}
 
+/// A filter for deciding whether an image is target or not
 struct ImageFilter {
+    /// The glob pattern for repository name
     pattern: glob::Pattern,
+    /// the image is target if it is elapsed this days after pushed
     days_after: u64,
+    /// The glob patterns for tag to ignore
     ignore_tag_patterns: Vec<glob::Pattern>,
 }
 
 impl ImageFilter {
-    pub fn new(conf: &RepositoryTargetsConfig) -> Self {
-        Self {
-            pattern: glob::Pattern::new(conf.pattern.as_str()).unwrap(), // todo
+    pub fn try_new(conf: &RepositoryTargetsConfig) -> Result<Self, ImageProviderError> {
+        Ok(Self {
+            pattern: glob::Pattern::new(conf.pattern.as_str())
+                .map_err(ImageProviderError::initialization_error)?,
             days_after: conf.days_after,
             ignore_tag_patterns: conf
                 .ignore_tag_patterns
                 .iter()
-                .map(|p| glob::Pattern::new(p.as_str()).unwrap())
-                .collect::<Vec<_>>(),
-        }
+                .map(|p| {
+                    glob::Pattern::new(p.as_str()).map_err(ImageProviderError::initialization_error)
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        })
     }
 
     pub fn is_match(&self, image: &EcrImageDetail) -> bool {

@@ -58,7 +58,7 @@ impl DysonCli {
     /// Try to initialize a cleaner
     async fn try_new_cleaner(&self) -> Result<Dyson, Box<dyn std::error::Error>> {
         let conf = DysonConfig::load_path(&self.global_args.config_path)?;
-        Ok(Dyson::new(&conf).await)
+        Ok(Dyson::new(&conf).await?)
     }
 }
 
