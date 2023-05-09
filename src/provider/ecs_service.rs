@@ -8,9 +8,16 @@ use crate::provider::{EcrImageId, ImageProvider, ImageProviderError};
 use crate::utils::try_join_set_to_stream;
 
 /// An ECR image provider from ECS services
-struct EcsServiceImageProvider {
+pub struct EcsServiceImageProvider {
     /// The AWS SDK client for ECS
     client: aws_sdk_ecs::Client,
+}
+
+impl EcsServiceImageProvider {
+    pub fn from_conf(conf: &aws_config::SdkConfig) -> EcsServiceImageProvider {
+        let client = aws_sdk_ecs::Client::new(conf);
+        Self { client }
+    }
 }
 
 #[async_trait::async_trait]

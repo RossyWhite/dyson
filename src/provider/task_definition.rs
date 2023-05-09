@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use aws_sdk_ecs::types::{SortOrder, TaskDefinitionFamilyStatus, TaskDefinitionStatus};
 use futures::TryStreamExt;
@@ -10,15 +9,23 @@ use crate::provider::{EcrImageId, ImageProvider, ImageProviderError};
 use crate::utils::try_join_set_to_stream;
 
 /// An ECR image source from Task Definitions
-struct TaskDefinitionSource {
+pub struct TaskDefinitionProvider {
     /// The AWS SDK client for ECS
-    client: Arc<aws_sdk_ecs::Client>,
+    client: aws_sdk_ecs::Client,
     /// The maximum number of results to return in a single family.
     max_result: i32,
 }
 
+impl TaskDefinitionProvider {
+    pub fn from_conf(conf: &aws_config::SdkConfig) -> TaskDefinitionProvider {
+        let client = aws_sdk_ecs::Client::new(conf);
+        let max_result = 2;
+        Self { client, max_result }
+    }
+}
+
 #[async_trait::async_trait]
-impl ImageProvider for TaskDefinitionSource {
+impl ImageProvider for TaskDefinitionProvider {
     async fn provide_images(&self) -> Result<HashSet<EcrImageId>, ImageProviderError> {
         let families: Vec<String> = self
             .client

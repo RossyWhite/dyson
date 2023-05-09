@@ -6,6 +6,9 @@ use futures::future::try_join_all;
 use crate::config::DysonConfig;
 use crate::image::EcrImageId;
 use crate::provider::ecr::EcrImageRegistry;
+use crate::provider::ecs_service::EcsServiceImageProvider;
+use crate::provider::lambda::LambdaImageProvider;
+use crate::provider::task_definition::TaskDefinitionProvider;
 use crate::provider::{ImageProvider, ImageRegistry};
 
 /// dyson App
@@ -20,7 +23,18 @@ impl Dyson {
     /// Create a new dyson cleaner
     pub async fn new(conf: &DysonConfig) -> Self {
         let registry = Arc::new(EcrImageRegistry::from_conf(&conf.registry).await);
-        let scan_targets: Vec<_> = conf.scans.iter().map(|_s| todo!()).collect::<Vec<_>>();
+
+        let mut scan_targets = Vec::<Arc<dyn ImageProvider>>::new();
+
+        for scan in &conf.scans {
+            let c = &aws_config::from_env()
+                .profile_name(&scan.profile_name)
+                .load()
+                .await;
+            scan_targets.push(Arc::new(LambdaImageProvider::from_conf(&c)));
+            scan_targets.push(Arc::new(EcsServiceImageProvider::from_conf(&c)));
+            scan_targets.push(Arc::new(TaskDefinitionProvider::from_conf(&c)));
+        }
 
         Self {
             registry,

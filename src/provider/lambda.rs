@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use aws_sdk_lambda::types::{FunctionConfiguration, PackageType};
 use futures::TryStreamExt;
@@ -10,9 +9,16 @@ use crate::provider::{EcrImageId, ImageProvider, ImageProviderError};
 use crate::utils::try_join_set_to_stream;
 
 /// An ECR image provider from lambda functions
-struct LambdaImageProvider {
+pub struct LambdaImageProvider {
     /// The AWS SDK client for Lambda
-    client: Arc<aws_sdk_lambda::Client>,
+    client: aws_sdk_lambda::Client,
+}
+
+impl LambdaImageProvider {
+    pub fn from_conf(conf: &aws_config::SdkConfig) -> LambdaImageProvider {
+        let client = aws_sdk_lambda::Client::new(conf);
+        Self { client }
+    }
 }
 
 #[async_trait::async_trait]
