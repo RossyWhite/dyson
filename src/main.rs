@@ -5,6 +5,7 @@ mod config;
 mod dyson;
 mod image;
 mod provider;
+mod summary;
 mod utils;
 
 #[tokio::main]

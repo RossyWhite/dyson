@@ -1,16 +1,14 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use aws_sdk_ecr::types::{
-    DescribeImagesFilter, ImageDetail, ImageIdentifier, Repository, TagStatus,
-};
+use aws_sdk_ecr::types::{DescribeImagesFilter, ImageDetail, Repository, TagStatus};
 use futures::TryStreamExt;
 use tokio::task::JoinSet;
 use tokio_stream::StreamExt;
 
 use crate::config::{RegistryConfig, RepositoryFiltersConfig};
-use crate::image::{EcrImageDetail, EcrImageId};
+use crate::image::{EcrImageDetail, EcrImageId, ImagesSummary};
 use crate::provider::{ImageDeleter, ImageDeleterError, ImageRegistry};
 use crate::provider::{ImageProvider, ImageProviderError};
 use crate::utils::try_join_set_to_stream;
@@ -109,15 +107,8 @@ impl ImageProvider for EcrImageRegistry {
 
 #[async_trait::async_trait]
 impl ImageDeleter for EcrImageRegistry {
-    async fn delete_images(&self, images: &HashSet<EcrImageId>) -> Result<(), ImageDeleterError> {
-        let per_repo = images.iter().fold(HashMap::new(), |mut acc, img| {
-            let repo = img.repository_name.clone();
-            let id = ImageIdentifier::builder().image_tag(&img.image_tag).build();
-            acc.entry(repo).or_insert_with(Vec::new).push(id);
-            acc
-        });
-
-        for (repo, ids) in per_repo {
+    async fn delete_images(&self, images: ImagesSummary) -> Result<(), ImageDeleterError> {
+        for (repo, ids) in images {
             self.client
                 .batch_delete_image()
                 .repository_name(&repo)

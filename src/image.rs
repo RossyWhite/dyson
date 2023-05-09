@@ -1,3 +1,5 @@
+use aws_sdk_ecr::types::ImageIdentifier;
+use std::collections::HashMap;
 use std::fmt::Debug;
 
 use once_cell::sync::OnceCell;
@@ -79,6 +81,9 @@ impl EcrImageDetail {
         }
     }
 }
+
+/// A summary of image tags per repository
+pub type ImagesSummary = HashMap<String, Vec<ImageIdentifier>>;
 
 #[cfg(test)]
 mod tests {

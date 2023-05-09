@@ -3,7 +3,7 @@ use std::fmt::Debug;
 
 use aws_smithy_http::result::SdkError;
 
-use crate::image::EcrImageId;
+use crate::image::{EcrImageId, ImagesSummary};
 
 pub mod ecr;
 pub mod ecs_service;
@@ -64,7 +64,7 @@ where
 #[async_trait::async_trait]
 pub trait ImageDeleter {
     /// Delete images given by `images`.
-    async fn delete_images(&self, images: &HashSet<EcrImageId>) -> Result<(), ImageDeleterError>;
+    async fn delete_images(&self, images: ImagesSummary) -> Result<(), ImageDeleterError>;
 }
 
 /// An error returned an ImageDeleter

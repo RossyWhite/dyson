@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::config::DysonConfig;
 use crate::dyson::Dyson;
+use crate::summary::print_summary;
 
 /// Dyson CLI
 #[derive(clap::Parser)]
@@ -18,8 +19,8 @@ impl DysonCli {
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
         match &self.command {
             Commands::Init(args) => self.run_init_command(args).await,
-            Commands::Plan => self.run_plan_command().await,
-            Commands::Apply => self.run_apply_command().await,
+            Commands::Plan => self.run_plan_command(&mut std::io::stdout()).await,
+            Commands::Apply => self.run_apply_command(&mut std::io::stdout()).await,
         }
     }
 
@@ -42,16 +43,28 @@ impl DysonCli {
     }
 
     /// Run the plan command
-    async fn run_plan_command(&self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn run_plan_command(
+        &self,
+        output: &mut impl std::io::Write,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let dyson = self.try_new_cleaner().await?;
-        dyson.plan(std::io::stdout()).await?;
+        let targets = dyson.list_target_images().await?;
+        println!("Plan Result:");
+        print_summary(&targets, output);
         Ok(())
     }
 
     /// Run the apply command
-    async fn run_apply_command(&self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn run_apply_command(
+        &self,
+        output: &mut impl std::io::Write,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let dyson = self.try_new_cleaner().await?;
-        dyson.apply(std::io::stdout()).await?;
+        let targets = dyson.list_target_images().await?;
+        println!("Delete following images:");
+        print_summary(&targets, output);
+        dyson.delete_images(targets).await?;
+        println!("Delete Complete!");
         Ok(())
     }
 

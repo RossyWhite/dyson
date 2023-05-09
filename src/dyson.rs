@@ -1,10 +1,11 @@
-use std::collections::HashSet;
+use aws_sdk_ecr::types::ImageIdentifier;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use futures::future::try_join_all;
 
 use crate::config::DysonConfig;
-use crate::image::EcrImageId;
+use crate::image::{EcrImageId, ImagesSummary};
 use crate::provider::ecr::EcrImageRegistry;
 use crate::provider::ecs_service::EcsServiceImageProvider;
 use crate::provider::lambda::LambdaImageProvider;
@@ -46,23 +47,15 @@ impl Dyson {
         })
     }
 
-    /// Dry-run the cleaner
-    pub async fn plan(&self, _output: impl std::io::Write) -> Result<(), DysonError> {
-        let targets = self.aggregate_images().await?;
-        println!("targets: {:?}", targets);
-        Ok(())
-    }
-
-    /// Apply the cleaner
-    pub async fn apply(&self, _output: impl std::io::Write) -> Result<(), DysonError> {
-        let targets = self.aggregate_images().await?;
-        println!("targets: {:?}", targets);
-        self.delete_images(&targets).await?;
-        Ok(())
+    /// List target images
+    pub async fn list_target_images(&self) -> Result<ImagesSummary, DysonError> {
+        let targets = self.aggregate_target_images().await?;
+        let summarized = self.summarize_tags_per_repo(&targets).await;
+        Ok(summarized)
     }
 
     /// aggregate images from sources
-    async fn aggregate_images(&self) -> Result<HashSet<EcrImageId>, DysonError> {
+    async fn aggregate_target_images(&self) -> Result<HashSet<EcrImageId>, DysonError> {
         let includes = self
             .registry
             .provide_images()
@@ -81,8 +74,20 @@ impl Dyson {
         Ok(&includes - &excludes)
     }
 
+    /// summarize images per repository
+    async fn summarize_tags_per_repo(&self, images: &HashSet<EcrImageId>) -> ImagesSummary {
+        images.iter().fold(HashMap::new(), |mut acc, image| {
+            let r = image.repository_name.clone();
+            let id = ImageIdentifier::builder()
+                .image_tag(&image.image_tag)
+                .build();
+            acc.entry(r).or_insert_with(Vec::new).push(id);
+            acc
+        })
+    }
+
     /// delete images from registry
-    async fn delete_images(&self, images: &HashSet<EcrImageId>) -> Result<(), DysonError> {
+    pub async fn delete_images(&self, images: ImagesSummary) -> Result<(), DysonError> {
         self.registry
             .delete_images(images)
             .await
@@ -105,11 +110,11 @@ pub struct DysonError {
 #[derive(Debug)]
 pub enum DysonErrorKind {
     /// An error caused by initialization.
-    InitializationError,
+    Initialization,
     /// An error caused by aggregation.
-    AggregationError,
+    Aggregation,
     /// An error caused by deletion.
-    DeletionError,
+    Deletion,
 }
 
 impl DysonError {
@@ -118,7 +123,7 @@ impl DysonError {
         E: std::error::Error + Send + Sync + 'static,
     {
         Self {
-            kind: DysonErrorKind::InitializationError,
+            kind: DysonErrorKind::Initialization,
             source: Box::new(err),
         }
     }
@@ -128,7 +133,7 @@ impl DysonError {
         E: std::error::Error + Send + Sync + 'static,
     {
         Self {
-            kind: DysonErrorKind::AggregationError,
+            kind: DysonErrorKind::Aggregation,
             source: Box::new(err),
         }
     }
@@ -138,7 +143,7 @@ impl DysonError {
         E: std::error::Error + Send + Sync + 'static,
     {
         Self {
-            kind: DysonErrorKind::DeletionError,
+            kind: DysonErrorKind::Deletion,
             source: Box::new(err),
         }
     }
@@ -165,10 +170,7 @@ mod tests {
 
         #[async_trait::async_trait]
         impl ImageDeleter for MockProvider {
-            async fn delete_images(
-                &self,
-                _images: &HashSet<EcrImageId>,
-            ) -> Result<(), ImageDeleterError> {
+            async fn delete_images(&self, _images: ImagesSummary) -> Result<(), ImageDeleterError> {
                 Ok(())
             }
         }
@@ -237,7 +239,7 @@ mod tests {
                 scan_targets,
             };
 
-            let res = dyson.aggregate_images().await.unwrap();
+            let res = dyson.aggregate_target_images().await.unwrap();
             assert_eq!(res, case.expected, "{}", case.name);
         }
     }
