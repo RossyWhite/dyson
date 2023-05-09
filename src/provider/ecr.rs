@@ -9,7 +9,7 @@ use futures::TryStreamExt;
 use tokio::task::JoinSet;
 use tokio_stream::StreamExt;
 
-use crate::config::{RegistryConfig, RepositoryTargetsConfig};
+use crate::config::{RegistryConfig, RepositoryFiltersConfig};
 use crate::image::{EcrImageDetail, EcrImageId};
 use crate::provider::{ImageDeleter, ImageDeleterError, ImageRegistry};
 use crate::provider::{ImageProvider, ImageProviderError};
@@ -19,8 +19,8 @@ use crate::utils::try_join_set_to_stream;
 pub struct EcrImageRegistry {
     /// The AWS SDK client for ECR
     client: aws_sdk_ecr::Client,
-    /// The filters for images
-    filters: Arc<Vec<ImageFilter>>,
+    /// The filter for images
+    filter: Arc<ImageFilter>,
 }
 
 impl EcrImageRegistry {
@@ -32,14 +32,8 @@ impl EcrImageRegistry {
                 .await,
         );
 
-        let filters = Arc::new(
-            conf.targets
-                .iter()
-                .map(ImageFilter::try_new)
-                .collect::<Result<Vec<_>, _>>()?,
-        );
-
-        Ok(Self { client, filters })
+        let filter = Arc::new(ImageFilter::try_new(&conf.filters)?);
+        Ok(Self { client, filter })
     }
 }
 
@@ -55,10 +49,11 @@ impl ImageProvider for EcrImageRegistry {
             .collect::<Result<Vec<_>, _>>()
             .await?;
 
+        let now = SystemTime::now();
         let mut tasks = JoinSet::new();
         repos.into_iter().for_each(|r| {
             let client = self.client.clone();
-            let filters = self.filters.clone();
+            let filter = self.filter.clone();
             let Some(registry_id) = r.registry_id().map(|s| s.to_owned()) else { return; };
             let Some(repository_name) = r.repository_name().map(|s| s.to_owned()) else { return; };
             let Some(region) = client.conf().region().map(|s| s.to_string()) else { return; };
@@ -90,9 +85,7 @@ impl ImageProvider for EcrImageRegistry {
                         t,
                         pushed_at,
                     ))
-                        .filter(|img| {
-                            filters.iter().any(|f| f.is_match(img))
-                        })
+                        .filter(|img| filter.is_match(img, now))
                         .map(|img| img.id)
                         .collect::<HashSet<_>>();
 
@@ -140,7 +133,32 @@ impl ImageDeleter for EcrImageRegistry {
 impl ImageRegistry for EcrImageRegistry {}
 
 /// A filter for deciding whether an image is target or not
+#[cfg_attr(test, derive(Debug))]
 struct ImageFilter {
+    /// Vector of filter items
+    filters: Vec<ImageFilterItem>,
+}
+
+impl ImageFilter {
+    /// Create a new ImageFilter
+    fn try_new(conf: &[RepositoryFiltersConfig]) -> Result<Self, ImageProviderError> {
+        Ok(Self {
+            filters: conf
+                .iter()
+                .map(ImageFilterItem::try_new)
+                .collect::<Result<Vec<_>, _>>()?,
+        })
+    }
+
+    /// Decide whether the image is target or not
+    fn is_match(&self, image: &EcrImageDetail, now: SystemTime) -> bool {
+        self.filters.iter().all(|f| f.is_match(image, now))
+    }
+}
+
+/// a filter item of ImageFilter
+#[cfg_attr(test, derive(Debug))]
+struct ImageFilterItem {
     /// The glob pattern for repository name
     pattern: glob::Pattern,
     /// the image is target if it is elapsed this days after pushed
@@ -149,8 +167,9 @@ struct ImageFilter {
     ignore_tag_patterns: Vec<glob::Pattern>,
 }
 
-impl ImageFilter {
-    pub fn try_new(conf: &RepositoryTargetsConfig) -> Result<Self, ImageProviderError> {
+impl ImageFilterItem {
+    /// Create a new ImageFilterItem
+    fn try_new(conf: &RepositoryFiltersConfig) -> Result<Self, ImageProviderError> {
         Ok(Self {
             pattern: glob::Pattern::new(conf.pattern.as_str())
                 .map_err(ImageProviderError::initialization_error)?,
@@ -165,17 +184,18 @@ impl ImageFilter {
         })
     }
 
-    pub fn is_match(&self, image: &EcrImageDetail) -> bool {
-        // if not match, that means this image is not target
+    /// Decide whether the image is target or not
+    pub fn is_match(&self, image: &EcrImageDetail, now: SystemTime) -> bool {
+        // if repository name not match, that means this image is target (ignore)
         if !self.pattern.matches(image.id.repository_name.as_str()) {
-            return false;
+            return true;
         }
 
         let n_days_before = aws_smithy_types::DateTime::from(
-            SystemTime::now() - Duration::from_secs(self.days_after * 24 * 60 * 60),
+            now - Duration::from_secs(self.days_after * 24 * 60 * 60),
         );
 
-        // if image is pushed after n_days_before, that means this image is not target
+        // if image is pushed is not before n_days_before, that means this image is not target
         if image.image_pushed_at.as_secs_f64() > n_days_before.as_secs_f64() {
             return false;
         }
@@ -188,5 +208,185 @@ impl ImageFilter {
         }
 
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use aws_smithy_types::date_time::Format;
+    use aws_smithy_types::DateTime;
+    use glob::Pattern;
+
+    use super::*;
+
+    #[test]
+    fn filter_test() {
+        #[derive(Debug)]
+        struct TestCase {
+            name: String,
+            filter: ImageFilter,
+            now: SystemTime,
+            input: Vec<EcrImageDetail>,
+            expected: HashSet<EcrImageId>,
+        }
+
+        let cases = vec![
+            TestCase {
+                name: "All images will be target if no filters".to_string(),
+                filter: ImageFilter { filters: vec![] },
+                now: SystemTime::UNIX_EPOCH,
+                input: vec![EcrImageDetail::new(
+                    "registry_id",
+                    "region",
+                    "repository_name",
+                    "image_tag",
+                    DateTime::from_str("1970-01-01T00:00:00Z", Format::DateTime).unwrap(),
+                )],
+                expected: HashSet::from([EcrImageId::new(
+                    "registry_id",
+                    "region",
+                    "repository_name",
+                    "image_tag",
+                )]),
+            },
+            TestCase {
+                name: "If repository name does not match, image will be target".to_string(),
+                filter: ImageFilter {
+                    filters: vec![
+                        ImageFilterItem {
+                            pattern: Pattern::new("dummy-*").unwrap(),
+                            days_after: 0,
+                            ignore_tag_patterns: vec![],
+                        }
+                    ]
+                },
+                now: SystemTime::UNIX_EPOCH,
+                input: vec![EcrImageDetail::new(
+                    "registry_id",
+                    "region",
+                    "repository_name",
+                    "image_tag",
+                    DateTime::from_str("1970-01-01T00:00:00Z", Format::DateTime).unwrap(),
+                )],
+                expected: HashSet::from([EcrImageId::new(
+                    "registry_id",
+                    "region",
+                    "repository_name",
+                    "image_tag",
+                )]),
+            },
+            TestCase {
+                name: "Repository name is matched, but the image is too new to be deleted".to_string(),
+                filter: ImageFilter {
+                    filters: vec![
+                        ImageFilterItem {
+                            pattern: Pattern::new("match-*").unwrap(),
+                            days_after: 30,
+                            ignore_tag_patterns: vec![],
+                        }
+                    ]
+                },
+                now: SystemTime::UNIX_EPOCH,
+                input: vec![EcrImageDetail::new(
+                    "registry_id",
+                    "region",
+                    "match-2",
+                    "image_tag",
+                    DateTime::from_str("1969-12-03T00:00:00Z", Format::DateTime).unwrap(),
+                )],
+                expected: Default::default(),
+            },
+            TestCase {
+                name: "Repository name is matched, and the image is old enough to be deleted".to_string(),
+                filter: ImageFilter {
+                    filters: vec![
+                        ImageFilterItem {
+                            pattern: Pattern::new("match-*").unwrap(),
+                            days_after: 30,
+                            ignore_tag_patterns: vec![],
+                        }
+                    ]
+                },
+                now: SystemTime::UNIX_EPOCH,
+                input: vec![EcrImageDetail::new(
+                    "registry_id",
+                    "region",
+                    "match-2",
+                    "image_tag",
+                    // UNIX_EPOCH - 31 days. this image is old enough to be deleted
+                    DateTime::from_str("1969-12-01T00:00:00Z", Format::DateTime).unwrap(),
+                )],
+                expected: HashSet::from([EcrImageId::new(
+                    "registry_id",
+                    "region",
+                    "match-2",
+                    "image_tag",
+                )]),
+            },
+            TestCase {
+                name: "Repository name is matched, and the image is old enough to be deleted, but the tag matches ignore_tag_pattern".to_string(),
+                filter: ImageFilter {
+                    filters: vec![
+                        ImageFilterItem {
+                            pattern: Pattern::new("match-*").unwrap(),
+                            days_after: 30,
+                            ignore_tag_patterns: vec![
+                                Pattern::new("ignore1-*").unwrap(),
+                                Pattern::new("ignore2-*").unwrap(),
+                            ],
+                        }
+                    ]
+                },
+                now: SystemTime::UNIX_EPOCH,
+                input: vec![EcrImageDetail::new(
+                    "registry_id",
+                    "region",
+                    "match-2",
+                    // this tag matches ignore_tag_pattern
+                    "ignore2-tag",
+                    // UNIX_EPOCH - 31 days. this image is old enough to be deleted
+                    DateTime::from_str("1969-12-01T00:00:00Z", Format::DateTime).unwrap(),
+                )],
+                expected: Default::default(),
+            },
+            TestCase {
+                name: "If repository name matches multiple filters, images will be target if all filter matches".to_string(),
+                filter: ImageFilter {
+                    filters: vec![
+                        ImageFilterItem {
+                            pattern: Pattern::new("match-*").unwrap(),
+                            days_after: 50,
+                            ignore_tag_patterns: vec![],
+                        },
+                        ImageFilterItem {
+                            pattern: Pattern::new("match-*").unwrap(),
+                            days_after: 30,
+                            ignore_tag_patterns: vec![],
+                        },
+                    ]
+                },
+                now: SystemTime::UNIX_EPOCH,
+                input: vec![EcrImageDetail::new(
+                    "registry_id",
+                    "region",
+                    "match-1",
+                    // this tag matches ignore_tag_pattern
+                    "ignore2-tag",
+                    // UNIX_EPOCH - 31 days. this image matches one filter, but not all filters
+                    DateTime::from_str("1969-12-01T00:00:00Z", Format::DateTime).unwrap(),
+                )],
+                expected: Default::default(),
+            },
+        ];
+
+        for case in cases {
+            let actual = case
+                .input
+                .into_iter()
+                .filter(|image| case.filter.is_match(image, case.now))
+                .map(|image| image.id)
+                .collect::<HashSet<_>>();
+            assert_eq!(actual, case.expected, "{}", case.name);
+        }
     }
 }

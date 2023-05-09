@@ -2,7 +2,9 @@ use std::fmt::Debug;
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct DysonConfig {
+    /// The registry config
     pub registry: RegistryConfig,
+    /// The scan configs
     pub scans: Vec<ScanConfig>,
 }
 
@@ -13,12 +15,12 @@ pub struct RegistryConfig {
     pub name: Option<String>,
     /// The AWS profile to use
     pub profile_name: String,
-    /// The scan options
-    pub targets: Vec<RepositoryTargetsConfig>,
+    /// The repository filters
+    pub filters: Vec<RepositoryFiltersConfig>,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub struct RepositoryTargetsConfig {
+pub struct RepositoryFiltersConfig {
     /// The repository pattern to apply this option to
     pub pattern: String,
     /// The number of days after which to extract images
@@ -36,17 +38,6 @@ pub struct ScanConfig {
     pub profile_name: String,
 }
 
-/// Filter
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub struct FilterConfig {
-    /// The name of the filter
-    pub name: Option<String>,
-    /// The repository pattern to apply this option to
-    pub pattern: String,
-    /// The number of images to keep
-    pub keep_count: u32,
-}
-
 impl DysonConfig {
     /// Load a config from a file
     pub fn load_path(
@@ -62,7 +53,7 @@ impl DysonConfig {
             registry: RegistryConfig {
                 name: Some("my-registry".to_string()),
                 profile_name: "profile1".to_string(),
-                targets: vec![RepositoryTargetsConfig {
+                filters: vec![RepositoryFiltersConfig {
                     pattern: "*".to_string(),
                     days_after: 30,
                     ignore_tag_patterns: vec!["latest".to_string()],
