@@ -33,7 +33,7 @@ impl EcrImageRegistry {
         );
 
         let filter = Arc::new(ImageFilter::try_new(
-            &conf.filters.as_ref().unwrap_or(&Vec::new()),
+            conf.filters.as_ref().unwrap_or(&Vec::new()),
         )?);
         let excluder = Arc::new(RepositoryExcluder::new(
             conf.excludes.as_ref().unwrap_or(&Vec::new()),
@@ -230,7 +230,7 @@ impl RepositoryExcluder {
     fn new(conf: &[String]) -> Result<Self, ImageProviderError> {
         let patterns = conf
             .iter()
-            .map(|p| glob::Pattern::new(&p))
+            .map(|p| glob::Pattern::new(p))
             .collect::<Result<Vec<_>, _>>()
             .map_err(ImageProviderError::initialization_error)?;
 
