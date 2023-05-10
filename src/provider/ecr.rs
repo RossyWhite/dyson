@@ -7,7 +7,7 @@ use futures::TryStreamExt;
 use tokio::task::JoinSet;
 use tokio_stream::StreamExt;
 
-use crate::config::{RegistryConfig, RepositoryFiltersConfig};
+use crate::config::{RegistryConfig, RepositoryFilterConfig};
 use crate::image::{EcrImageDetail, EcrImageId, ImagesSummary};
 use crate::provider::{ImageDeleter, ImageDeleterError, ImageRegistry};
 use crate::provider::{ImageProvider, ImageProviderError};
@@ -19,6 +19,8 @@ pub struct EcrImageRegistry {
     client: aws_sdk_ecr::Client,
     /// The filter for images
     filter: Arc<ImageFilter>,
+    /// The repository excluder
+    excluder: Arc<RepositoryExcluder>,
 }
 
 impl EcrImageRegistry {
@@ -30,8 +32,18 @@ impl EcrImageRegistry {
                 .await,
         );
 
-        let filter = Arc::new(ImageFilter::try_new(&conf.filters)?);
-        Ok(Self { client, filter })
+        let filter = Arc::new(ImageFilter::try_new(
+            &conf.filters.as_ref().unwrap_or(&Vec::new()),
+        )?);
+        let excluder = Arc::new(RepositoryExcluder::new(
+            conf.excludes.as_ref().unwrap_or(&Vec::new()),
+        )?);
+
+        Ok(Self {
+            client,
+            filter,
+            excluder,
+        })
     }
 }
 
@@ -55,6 +67,11 @@ impl ImageProvider for EcrImageRegistry {
             let Some(registry_id) = r.registry_id().map(|s| s.to_owned()) else { return; };
             let Some(repository_name) = r.repository_name().map(|s| s.to_owned()) else { return; };
             let Some(region) = client.conf().region().map(|s| s.to_string()) else { return; };
+
+            // Skip if the repository is excluded
+            if self.excluder.is_excluded(&repository_name) {
+                return;
+            }
 
             tasks.spawn(async move {
                 let details: Vec<ImageDetail> = client
@@ -132,7 +149,7 @@ struct ImageFilter {
 
 impl ImageFilter {
     /// Create a new ImageFilter
-    fn try_new(conf: &[RepositoryFiltersConfig]) -> Result<Self, ImageProviderError> {
+    fn try_new(conf: &[RepositoryFilterConfig]) -> Result<Self, ImageProviderError> {
         Ok(Self {
             filters: conf
                 .iter()
@@ -160,7 +177,7 @@ struct ImageFilterItem {
 
 impl ImageFilterItem {
     /// Create a new ImageFilterItem
-    fn try_new(conf: &RepositoryFiltersConfig) -> Result<Self, ImageProviderError> {
+    fn try_new(conf: &RepositoryFilterConfig) -> Result<Self, ImageProviderError> {
         Ok(Self {
             pattern: glob::Pattern::new(conf.pattern.as_str())
                 .map_err(ImageProviderError::initialization_error)?,
@@ -186,7 +203,7 @@ impl ImageFilterItem {
             now - Duration::from_secs(self.days_after * 24 * 60 * 60),
         );
 
-        // if image is pushed is not before n_days_before, that means this image is not target
+        // if image is pushed is newer than n_days_before, that means this image is not target
         if image.image_pushed_at.as_secs_f64() > n_days_before.as_secs_f64() {
             return false;
         }
@@ -199,6 +216,30 @@ impl ImageFilterItem {
         }
 
         true
+    }
+}
+
+/// A filter for deciding whether a repository is target or not
+#[cfg_attr(test, derive(Debug))]
+struct RepositoryExcluder {
+    patterns: Vec<glob::Pattern>,
+}
+
+impl RepositoryExcluder {
+    /// Create a new RepositoryExcluder
+    fn new(conf: &[String]) -> Result<Self, ImageProviderError> {
+        let patterns = conf
+            .iter()
+            .map(|p| glob::Pattern::new(&p))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(ImageProviderError::initialization_error)?;
+
+        Ok(Self { patterns })
+    }
+
+    /// Decide whether the repository is target or not
+    fn is_excluded(&self, repository_name: &str) -> bool {
+        self.patterns.iter().any(|p| p.matches(repository_name))
     }
 }
 
@@ -215,6 +256,7 @@ mod tests {
         #[derive(Debug)]
         struct TestCase {
             name: String,
+            excluder: Option<RepositoryExcluder>,
             filter: ImageFilter,
             now: SystemTime,
             input: Vec<EcrImageDetail>,
@@ -224,6 +266,7 @@ mod tests {
         let cases = vec![
             TestCase {
                 name: "All images will be target if no filters".to_string(),
+                excluder: None,
                 filter: ImageFilter { filters: vec![] },
                 now: SystemTime::UNIX_EPOCH,
                 input: vec![EcrImageDetail::new(
@@ -242,6 +285,7 @@ mod tests {
             },
             TestCase {
                 name: "If repository name does not match, image will be target".to_string(),
+                excluder: None,
                 filter: ImageFilter {
                     filters: vec![
                         ImageFilterItem {
@@ -268,6 +312,7 @@ mod tests {
             },
             TestCase {
                 name: "Repository name is matched, but the image is too new to be deleted".to_string(),
+                excluder: None,
                 filter: ImageFilter {
                     filters: vec![
                         ImageFilterItem {
@@ -289,6 +334,7 @@ mod tests {
             },
             TestCase {
                 name: "Repository name is matched, and the image is old enough to be deleted".to_string(),
+                excluder: None,
                 filter: ImageFilter {
                     filters: vec![
                         ImageFilterItem {
@@ -316,6 +362,7 @@ mod tests {
             },
             TestCase {
                 name: "Repository name is matched, and the image is old enough to be deleted, but the tag matches ignore_tag_pattern".to_string(),
+                excluder: None,
                 filter: ImageFilter {
                     filters: vec![
                         ImageFilterItem {
@@ -342,6 +389,7 @@ mod tests {
             },
             TestCase {
                 name: "If repository name matches multiple filters, images will be target if all filter matches".to_string(),
+                excluder: None,
                 filter: ImageFilter {
                     filters: vec![
                         ImageFilterItem {
@@ -368,15 +416,43 @@ mod tests {
                 )],
                 expected: Default::default(),
             },
+            TestCase {
+                name: "Repository is excluded by excluder".to_string(),
+                excluder: Some(
+                    RepositoryExcluder {
+                        patterns: vec![Pattern::new("match-*").unwrap()],
+                    }
+                ),
+                filter: ImageFilter {
+                    filters: vec![]
+                },
+                now: SystemTime::UNIX_EPOCH,
+                input: vec![EcrImageDetail::new(
+                    "registry_id",
+                    "region",
+                    "match-2",
+                    "image_tag",
+                    // UNIX_EPOCH - 31 days. this image is old enough to be deleted
+                    DateTime::from_str("1969-12-01T00:00:00Z", Format::DateTime).unwrap(),
+                )],
+                expected: HashSet::new(),
+            },
         ];
 
         for case in cases {
             let actual = case
                 .input
                 .into_iter()
+                .filter(|image| {
+                    if let Some(excluder) = &case.excluder {
+                        return !excluder.is_excluded(&image.id.repository_name);
+                    }
+                    true
+                })
                 .filter(|image| case.filter.is_match(image, case.now))
                 .map(|image| image.id)
                 .collect::<HashSet<_>>();
+
             assert_eq!(actual, case.expected, "{}", case.name);
         }
     }

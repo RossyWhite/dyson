@@ -15,12 +15,14 @@ pub struct RegistryConfig {
     pub name: Option<String>,
     /// The AWS profile to use
     pub profile_name: String,
+    /// The repository exclude patterns
+    pub excludes: Option<Vec<String>>,
     /// The repository filters
-    pub filters: Vec<RepositoryFiltersConfig>,
+    pub filters: Option<Vec<RepositoryFilterConfig>>,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub struct RepositoryFiltersConfig {
+pub struct RepositoryFilterConfig {
     /// The repository pattern to apply this option to
     pub pattern: String,
     /// The number of days after which to extract images
@@ -53,11 +55,12 @@ impl DysonConfig {
             registry: RegistryConfig {
                 name: Some("my-registry".to_string()),
                 profile_name: "profile1".to_string(),
-                filters: vec![RepositoryFiltersConfig {
+                excludes: Some(vec!["exclude/*".to_string()]),
+                filters: Some(vec![RepositoryFilterConfig {
                     pattern: "*".to_string(),
                     days_after: 30,
                     ignore_tag_patterns: vec!["latest".to_string()],
-                }],
+                }]),
             },
             scans: vec![ScanConfig {
                 name: Some("scan-target".to_string()),
