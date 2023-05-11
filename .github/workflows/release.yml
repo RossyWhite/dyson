@@ -3,6 +3,10 @@ on:
   push:
     tags:
       - "v*"
+
+permissions:
+  contents: write
+
 env:
   BIN_NAME: dyson
 jobs:
