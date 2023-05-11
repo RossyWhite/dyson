@@ -65,8 +65,7 @@ jobs:
           outdir="./target/${{ env.TARGET_DIR }}/release"
           staging="${{ env.BIN_NAME }}-${{ steps.get_version.outputs.VERSION }}-${{ matrix.target }}"
           mkdir -p "$staging"/{complete,doc}
-          cp {README.md,LICENSE-*} "$staging/"
-          cp {CHANGELOG.md,docs/*} "$staging/doc/"
+          cp README.md "$staging/"
           cp "target/${{ matrix.target }}/release/${{ env.BIN_NAME }}" "$staging/"
           tar czf "$staging.tar.gz" -C "$staging" .
           echo "ASSET=$staging.tar.gz" >> $GITHUB_ENV
