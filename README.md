@@ -41,14 +41,6 @@ configuration file is named `dyson.yaml`.
 You can customize the configuration file to fit your specific needs. The configuration file uses YAML format and should
 contain the following information:
 
-## Configuration
-
-Dyson requires a configuration file that specifies the rules for identifying unused images. By default, the
-configuration file is named `dyson.yaml`.
-
-You can customize the configuration file to fit your specific needs. The configuration file uses YAML format and should
-contain the following information:
-
 ```yaml
 registry:
   name: my-registry
