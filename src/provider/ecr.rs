@@ -183,9 +183,11 @@ impl ImageFilterItem {
         Ok(Self {
             pattern: glob::Pattern::new(conf.pattern.as_str())
                 .map_err(ImageProviderError::initialization_error)?,
-            days_after: conf.days_after,
+            days_after: conf.days_after.unwrap_or(0), // by default, all images are target after pushed
             ignore_tag_patterns: conf
                 .ignore_tag_patterns
+                .as_ref()
+                .unwrap_or(&Vec::new())
                 .iter()
                 .map(|p| {
                     glob::Pattern::new(p.as_str()).map_err(ImageProviderError::initialization_error)

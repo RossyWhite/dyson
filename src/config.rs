@@ -26,9 +26,9 @@ pub struct RepositoryFilterConfig {
     /// The repository pattern to apply this option to
     pub pattern: String,
     /// The number of days after which to extract images
-    pub days_after: u64,
+    pub days_after: Option<u64>,
     /// The tag patterns to ignore
-    pub ignore_tag_patterns: Vec<String>,
+    pub ignore_tag_patterns: Option<Vec<String>>,
 }
 
 /// Scan Target
@@ -58,8 +58,8 @@ impl DysonConfig {
                 excludes: Some(vec!["exclude/*".to_string()]),
                 filters: Some(vec![RepositoryFilterConfig {
                     pattern: "*".to_string(),
-                    days_after: 30,
-                    ignore_tag_patterns: vec!["latest".to_string()],
+                    days_after: Some(30),
+                    ignore_tag_patterns: Some(vec!["latest".to_string()]),
                 }]),
             },
             scans: vec![ScanConfig {
