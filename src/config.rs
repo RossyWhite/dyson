@@ -37,18 +37,18 @@ pub struct RepositoryFilterConfig {
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct NotifierConfig {
     /// The slack config
-    slack: SlackNotifierConfig,
+    pub slack: SlackNotifierConfig,
 }
 
 /// The slack notifier config
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct SlackNotifierConfig {
     /// The slack webhook url
-    webhook_url: String,
+    pub webhook_url: String,
     /// The slack username
-    username: Option<String>,
+    pub username: Option<String>,
     /// The slack channel
-    channel: Option<String>,
+    pub channel: Option<String>,
 }
 
 /// Scan Target

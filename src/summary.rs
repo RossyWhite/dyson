@@ -2,8 +2,8 @@ use prettytable::{row, Table};
 
 use crate::image::ImagesSummary;
 
-/// prints the summary of images
-pub fn print_summary(summary: &ImagesSummary, output: &mut impl std::io::Write) {
+/// writes the summary of images
+pub fn write_summary(summary: &ImagesSummary, output: &mut impl std::io::Write) {
     let mut table = Table::new();
 
     table.add_row(row!["Repo", "Tags", "Total"]);

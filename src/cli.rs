@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::config::DysonConfig;
 use crate::dyson::Dyson;
-use crate::summary::print_summary;
+use crate::summary::write_summary;
 
 /// Dyson CLI
 #[derive(clap::Parser)]
@@ -19,8 +19,8 @@ impl DysonCli {
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
         match &self.command {
             Commands::Init(args) => self.run_init_command(args).await,
-            Commands::Plan => self.run_plan_command(&mut std::io::stdout()).await,
-            Commands::Apply => self.run_apply_command(&mut std::io::stdout()).await,
+            Commands::Plan => self.run_plan_command().await,
+            Commands::Apply => self.run_apply_command().await,
         }
     }
 
@@ -43,28 +43,31 @@ impl DysonCli {
     }
 
     /// Run the plan command
-    async fn run_plan_command(
-        &self,
-        output: &mut impl std::io::Write,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    async fn run_plan_command(&self) -> Result<(), Box<dyn std::error::Error>> {
         let dyson = self.try_new_cleaner().await?;
         let targets = dyson.list_target_images().await?;
-        println!("Plan Result:");
-        print_summary(&targets, output);
+
+        let mut buf = Vec::new();
+        write_summary(&targets, &mut std::io::BufWriter::new(&mut buf));
+        let summary = String::from_utf8(buf)?;
+        println!("Plan Result:\n{}", summary);
+        dyson.notify_result("Plan Result", &summary).await?;
         Ok(())
     }
 
     /// Run the apply command
-    async fn run_apply_command(
-        &self,
-        output: &mut impl std::io::Write,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    async fn run_apply_command(&self) -> Result<(), Box<dyn std::error::Error>> {
         let dyson = self.try_new_cleaner().await?;
         let targets = dyson.list_target_images().await?;
-        println!("Delete following images:");
-        print_summary(&targets, output);
+
+        let mut buf = Vec::new();
+        write_summary(&targets, &mut std::io::BufWriter::new(&mut buf));
+        let summary = String::from_utf8(buf)?;
+        println!("Following images will be deleted:\n{}", summary);
+        println!("Now Applying...");
         dyson.delete_images(targets).await?;
-        println!("Delete Complete!");
+        dyson.notify_result("Apply Result", &summary).await?;
+        println!("Apply Complete!");
         Ok(())
     }
 
