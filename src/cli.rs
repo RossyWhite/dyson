@@ -51,7 +51,7 @@ impl DysonCli {
         write_summary(&targets, &mut std::io::BufWriter::new(&mut buf));
         let summary = String::from_utf8(buf)?;
         println!("Plan Result:\n{}", summary);
-        dyson.notify_result("Plan Result", &summary).await?;
+        dyson.notify_result("Plan Succeeded!!", targets).await?;
         Ok(())
     }
 
@@ -65,8 +65,8 @@ impl DysonCli {
         let summary = String::from_utf8(buf)?;
         println!("Following images will be deleted:\n{}", summary);
         println!("Now Applying...");
-        dyson.delete_images(targets).await?;
-        dyson.notify_result("Apply Result", &summary).await?;
+        dyson.delete_images(&targets).await?;
+        dyson.notify_result("Apply Succeeded!!", targets).await?;
         println!("Apply Complete!");
         Ok(())
     }

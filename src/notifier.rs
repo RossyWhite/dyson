@@ -1,6 +1,5 @@
-use std::error::Error;
-
 use crate::config::SlackNotifierConfig;
+use crate::image::ImagesSummary;
 
 /// An error that can occur during the notification process.
 #[derive(Debug, thiserror::Error)]
@@ -21,14 +20,14 @@ pub struct Message {
     /// The title of the message
     title: String,
     /// The body of the message
-    body: String,
+    summary: ImagesSummary,
 }
 
 impl Message {
-    pub fn new(title: impl Into<String>, body: impl Into<String>) -> Self {
+    pub fn new(title: impl Into<String>, summary: ImagesSummary) -> Self {
         Self {
             title: title.into(),
-            body: body.into(),
+            summary,
         }
     }
 }
@@ -37,6 +36,8 @@ pub struct SlackNotifier {
     webhook_url: String,
     username: Option<String>,
     channel: Option<String>,
+    icon_url: Option<String>,
+    http_client: reqwest::Client,
 }
 
 impl SlackNotifier {
@@ -45,6 +46,8 @@ impl SlackNotifier {
             webhook_url: config.webhook_url.clone(),
             username: config.username.clone(),
             channel: config.channel.clone(),
+            icon_url: config.icon_url.clone(),
+            http_client: reqwest::Client::new(),
         }
     }
 }
@@ -52,6 +55,46 @@ impl SlackNotifier {
 #[async_trait::async_trait]
 impl Notifier for SlackNotifier {
     async fn notify(&self, message: Message) -> Result<(), NotificationError> {
-        todo!()
+        let result = message.summary.iter().fold(
+            String::from("Repo | Count\n----------------\n"),
+            |acc, (key, value)| format!("{}{} | {}\n", acc, key, value.len()),
+        );
+
+        let mut payload = serde_json::json!({
+            "attachments": [
+                {
+                    "color": "#36a64f",
+                    "fields": [
+                      {
+                        "title": message.title,
+                        "value": format!("```{}```", result),
+                        "short": false
+                      }
+                    ]
+                }
+            ]
+        });
+
+        if let Some(username) = &self.username {
+            payload["username"] = serde_json::json!(username);
+        }
+
+        if let Some(channel) = &self.channel {
+            payload["channel"] = serde_json::json!(channel);
+        }
+
+        if let Some(icon_url) = &self.icon_url {
+            payload["icon_url"] = serde_json::json!(icon_url);
+        }
+
+        self.http_client
+            .post(&self.webhook_url)
+            .json(&payload)
+            .send()
+            .await
+            .map(|_| ())
+            .map_err(|err| NotificationError {
+                source: Box::new(err),
+            })
     }
 }

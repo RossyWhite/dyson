@@ -49,6 +49,9 @@ pub struct SlackNotifierConfig {
     pub username: Option<String>,
     /// The slack channel
     pub channel: Option<String>,
+    /// The slack icon url
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon_url: Option<String>,
 }
 
 /// Scan Target
@@ -92,6 +95,7 @@ impl DysonConfig {
                     webhook_url: "https://hooks.slack.com/services/xxx/yyy/zzz".to_string(),
                     username: Some("dyson-bot".to_string()),
                     channel: Some("random".to_string()),
+                    icon_url: None,
                 },
             }),
         }

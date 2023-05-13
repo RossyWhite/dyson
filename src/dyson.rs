@@ -1,10 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use aws_sdk_ecr::types::ImageIdentifier;
-use futures::future::try_join_all;
-use futures::TryFutureExt;
-
 use crate::config::DysonConfig;
 use crate::image::{EcrImageId, ImagesSummary};
 use crate::notifier::{Message, Notifier, SlackNotifier};
@@ -13,6 +9,8 @@ use crate::provider::ecs_service::EcsServiceImageProvider;
 use crate::provider::lambda::LambdaImageProvider;
 use crate::provider::task_definition::TaskDefinitionProvider;
 use crate::provider::{ImageProvider, ImageRegistry};
+use aws_sdk_ecr::types::ImageIdentifier;
+use futures::future::try_join_all;
 
 /// dyson App
 pub struct Dyson {
@@ -97,7 +95,7 @@ impl Dyson {
     }
 
     /// delete images from registry
-    pub async fn delete_images(&self, images: ImagesSummary) -> Result<(), DysonError> {
+    pub async fn delete_images(&self, images: &ImagesSummary) -> Result<(), DysonError> {
         self.registry
             .delete_images(images)
             .await
@@ -105,10 +103,14 @@ impl Dyson {
         Ok(())
     }
 
-    pub async fn notify_result(&self, title: &str, body: &str) -> Result<(), DysonError> {
+    pub async fn notify_result(
+        &self,
+        title: &str,
+        summary: ImagesSummary,
+    ) -> Result<(), DysonError> {
         let Some(notifier) = &self.notifier else { return Ok(()); };
         Ok(notifier
-            .notify(Message::new(title, body))
+            .notify(Message::new(title, summary))
             .await
             .map_err(DysonError::notification_error)?)
     }
@@ -200,7 +202,10 @@ mod tests {
 
         #[async_trait::async_trait]
         impl ImageDeleter for MockProvider {
-            async fn delete_images(&self, _images: ImagesSummary) -> Result<(), ImageDeleterError> {
+            async fn delete_images(
+                &self,
+                _images: &ImagesSummary,
+            ) -> Result<(), ImageDeleterError> {
                 Ok(())
             }
         }
@@ -267,6 +272,7 @@ mod tests {
             let dyson = Dyson {
                 registry,
                 scan_targets,
+                notifier: None,
             };
 
             let res = dyson.aggregate_target_images().await.unwrap();

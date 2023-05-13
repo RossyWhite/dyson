@@ -124,12 +124,12 @@ impl ImageProvider for EcrImageRegistry {
 
 #[async_trait::async_trait]
 impl ImageDeleter for EcrImageRegistry {
-    async fn delete_images(&self, images: ImagesSummary) -> Result<(), ImageDeleterError> {
+    async fn delete_images(&self, images: &ImagesSummary) -> Result<(), ImageDeleterError> {
         for (repo, ids) in images {
             for chunk in ids.chunks(100).map(|chunk| chunk.to_vec()) {
                 self.client
                     .batch_delete_image()
-                    .repository_name(&repo)
+                    .repository_name(repo)
                     .set_image_ids(Some(chunk))
                     .send()
                     .await?;
