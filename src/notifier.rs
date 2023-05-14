@@ -1,4 +1,4 @@
-use crate::config::SlackNotifierConfig;
+use crate::config::SlackNotificationConfig;
 use crate::image::ImagesSummary;
 
 /// An error that can occur during the notification process.
@@ -41,7 +41,7 @@ pub struct SlackNotifier {
 }
 
 impl SlackNotifier {
-    pub fn new(config: &SlackNotifierConfig) -> Self {
+    pub fn new(config: &SlackNotificationConfig) -> Self {
         Self {
             webhook_url: config.webhook_url.clone(),
             username: config.username.clone(),

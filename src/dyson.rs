@@ -44,7 +44,7 @@ impl Dyson {
         }
 
         let notifier = conf
-            .notifier
+            .notification
             .as_ref()
             .map(|conf| Box::new(SlackNotifier::new(&conf.slack)) as Box<dyn Notifier>);
 
@@ -109,10 +109,10 @@ impl Dyson {
         summary: ImagesSummary,
     ) -> Result<(), DysonError> {
         let Some(notifier) = &self.notifier else { return Ok(()); };
-        Ok(notifier
+        notifier
             .notify(Message::new(title, summary))
             .await
-            .map_err(DysonError::notification_error)?)
+            .map_err(DysonError::notification_error)
     }
 }
 

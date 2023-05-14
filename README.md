@@ -57,7 +57,7 @@ scans:
   - name: scan-target
     profile_name: profile2
 
-notifier:
+notification:
   slack:
     webhook_url: https://hooks.slack.com/services/xxx/yyy/zzz
     username: dyson-bot
