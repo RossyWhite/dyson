@@ -56,6 +56,12 @@ registry:
 scans:
   - name: scan-target
     profile_name: profile2
+
+notifier:
+  slack:
+    webhook_url: https://hooks.slack.com/services/xxx/yyy/zzz
+    username: dyson-bot
+    channel: random
 ```
 
 ### Registry Configuration
@@ -86,3 +92,11 @@ The `scans` section defines the scans target accounts.
 - `profile_name`: The AWS profile name to use for authentication when accessing the account.
 
 You can define multiple scans in the `scans` section if needed.
+
+### Notifier Configuration
+
+Dyson provide a simple notification mechanism to notify the result. Currently, only Slack is supported.
+
+- `webhook_url`: The Slack webhook URL to which the notifications will be sent.
+- `username (optional)`: The username to display for the notification.
+- `channel (optional)`: The Slack channel or user ID to which the notifications will be sent.
