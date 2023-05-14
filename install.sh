@@ -30,7 +30,7 @@ curl -fsSL -H "Accept: application/octet-stream" \
   -o "${downloaded_file}"
 
 echo "[3/4] Install ${exe_name} to the ${executable_folder}"
-tar -xz -f "${downloaded_file}" -C ${executable_folder}
+sudo tar -xz -f "${downloaded_file}" -C ${executable_folder}
 exe=${executable_folder}/${exe_name}
 chmod +x "${exe}"
 
