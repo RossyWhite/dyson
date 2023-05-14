@@ -1,16 +1,16 @@
-use aws_sdk_ecr::types::ImageIdentifier;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use futures::future::try_join_all;
-
 use crate::config::DysonConfig;
 use crate::image::{EcrImageId, ImagesSummary};
+use crate::notifier::{Message, Notifier, SlackNotifier};
 use crate::provider::ecr::EcrImageRegistry;
 use crate::provider::ecs_service::EcsServiceImageProvider;
 use crate::provider::lambda::LambdaImageProvider;
 use crate::provider::task_definition::TaskDefinitionProvider;
 use crate::provider::{ImageProvider, ImageRegistry};
+use aws_sdk_ecr::types::ImageIdentifier;
+use futures::future::try_join_all;
 
 /// dyson App
 pub struct Dyson {
@@ -18,6 +18,8 @@ pub struct Dyson {
     registry: Arc<dyn ImageRegistry>,
     /// scan targets are the targets to scan for images
     scan_targets: Vec<Arc<dyn ImageProvider>>,
+    /// notifier to notify the result
+    notifier: Option<Box<dyn Notifier>>,
 }
 
 impl Dyson {
@@ -41,9 +43,15 @@ impl Dyson {
             scan_targets.push(Arc::new(TaskDefinitionProvider::from_conf(c)));
         }
 
+        let notifier = conf
+            .notification
+            .as_ref()
+            .map(|conf| Box::new(SlackNotifier::new(&conf.slack)) as Box<dyn Notifier>);
+
         Ok(Self {
             registry,
             scan_targets,
+            notifier,
         })
     }
 
@@ -87,12 +95,24 @@ impl Dyson {
     }
 
     /// delete images from registry
-    pub async fn delete_images(&self, images: ImagesSummary) -> Result<(), DysonError> {
+    pub async fn delete_images(&self, images: &ImagesSummary) -> Result<(), DysonError> {
         self.registry
             .delete_images(images)
             .await
             .map_err(DysonError::deletion_error)?;
         Ok(())
+    }
+
+    pub async fn notify_result(
+        &self,
+        title: &str,
+        summary: ImagesSummary,
+    ) -> Result<(), DysonError> {
+        let Some(notifier) = &self.notifier else { return Ok(()); };
+        notifier
+            .notify(Message::new(title, summary))
+            .await
+            .map_err(DysonError::notification_error)
     }
 }
 
@@ -115,6 +135,8 @@ pub enum DysonErrorKind {
     Aggregation,
     /// An error caused by deletion.
     Deletion,
+    /// An error caused by notification.
+    Notification,
 }
 
 impl DysonError {
@@ -147,6 +169,16 @@ impl DysonError {
             source: Box::new(err),
         }
     }
+
+    pub fn notification_error<E>(err: E) -> Self
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        Self {
+            kind: DysonErrorKind::Notification,
+            source: Box::new(err),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -170,7 +202,10 @@ mod tests {
 
         #[async_trait::async_trait]
         impl ImageDeleter for MockProvider {
-            async fn delete_images(&self, _images: ImagesSummary) -> Result<(), ImageDeleterError> {
+            async fn delete_images(
+                &self,
+                _images: &ImagesSummary,
+            ) -> Result<(), ImageDeleterError> {
                 Ok(())
             }
         }
@@ -237,6 +272,7 @@ mod tests {
             let dyson = Dyson {
                 registry,
                 scan_targets,
+                notifier: None,
             };
 
             let res = dyson.aggregate_target_images().await.unwrap();

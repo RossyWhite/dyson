@@ -4,6 +4,7 @@ mod cli;
 mod config;
 mod dyson;
 mod image;
+mod notifier;
 mod provider;
 mod summary;
 mod utils;

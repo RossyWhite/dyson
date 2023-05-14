@@ -6,6 +6,8 @@ pub struct DysonConfig {
     pub registry: RegistryConfig,
     /// The scan configs
     pub scans: Vec<ScanConfig>,
+    /// The notification config
+    pub notification: Option<NotificationConfig>,
 }
 
 /// The registry to delete
@@ -29,6 +31,27 @@ pub struct RepositoryFilterConfig {
     pub days_after: Option<u64>,
     /// The tag patterns to ignore
     pub ignore_tag_patterns: Option<Vec<String>>,
+}
+
+/// The notification config
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct NotificationConfig {
+    /// The slack config
+    pub slack: SlackNotificationConfig,
+}
+
+/// The slack notifier config
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct SlackNotificationConfig {
+    /// The slack webhook url
+    pub webhook_url: String,
+    /// The slack username
+    pub username: Option<String>,
+    /// The slack channel
+    pub channel: Option<String>,
+    /// The slack icon url
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon_url: Option<String>,
 }
 
 /// Scan Target
@@ -66,6 +89,15 @@ impl DysonConfig {
                 name: Some("scan-target".to_string()),
                 profile_name: "profile2".to_string(),
             }],
+
+            notification: Some(NotificationConfig {
+                slack: SlackNotificationConfig {
+                    webhook_url: "https://hooks.slack.com/services/xxx/yyy/zzz".to_string(),
+                    username: Some("dyson-bot".to_string()),
+                    channel: Some("random".to_string()),
+                    icon_url: None,
+                },
+            }),
         }
     }
 }
